@@ -1,7 +1,7 @@
 # fire-strings
 Arduino code for fire strings
 
-##TODO:
+## TODO:
 
 ..Create better smoothing function for inbound signal from SW-42
 
