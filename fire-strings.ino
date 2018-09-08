@@ -1,10 +1,13 @@
+#include <SimpleTimer.h>
+
 #define SAMPLE_SIZE 50
 #define DELAY 10
-#define THRESHOLD 1.0
+  #define THRESHOLD 1.0
 #define MAX_BOUND 10000
 #define SOL_DURATION 400
 #define SOL_REFRACTORY 1500
 #define CHANNELS 2
+#define DEBUG true
 
 int LED_Pin = 13;
 int VIBR_PIN[CHANNELS] = { A0, A1 };
@@ -12,7 +15,8 @@ int SOL_PIN[CHANNELS] = { 10, 11 };
 
 float measurements[CHANNELS][SAMPLE_SIZE];
 float bufferResult[CHANNELS];
-int state[CHANNELS] = { 0, 1 };
+int state[CHANNELS] = { 0, 0 };
+int iter[CHANNELS] = { 0, 0 };
 bool readAnalogVibration = true;
 
 void setup(){
@@ -42,17 +46,36 @@ void trigger_solenoid(int channel) {
     delay(SOL_REFRACTORY); 
 }
 
+void trigger_solenoids() {
+    for(int i=0; i<CHANNELS; i++) {
+      if (state[i]) {
+        digitalWrite(SOL_PIN[i], HIGH); 
+        reset_buffer(i);            
+      }
+    }
+    
+    Serial.println("Actuation.....");
+    delay(SOL_DURATION);    
+
+    for(int i=0; i<CHANNELS; i++) {
+      digitalWrite(SOL_PIN[i], LOW);        
+    }
+    Serial.println("Refractory.....");
+    delay(SOL_REFRACTORY); 
+}
+
 void loop(){  
     if (readAnalogVibration) {
       
       for (int k=0; k<CHANNELS; k++) {
-        //int piezoADC[CHANNELS] =  { analogRead(VIBR_PIN[0]) , analogRead(VIBR_PIN[1]) };
-
         int piezoVal = analogRead(VIBR_PIN[k]);
-        //Serial.println(piezoVal);     
-        
+
+        //TODO: modify moving average function
         piezo_moving_average(k, piezoVal / 1023.0 * 25.0);
 
+        //TODO: if a channel crosses a threshold, set state to 1
+        //if timer is active and > 1 sec, stop timer and trigger solenoids
+        //if timer is inactive, start timer
         if (bufferResult[k] > THRESHOLD){
           digitalWrite(LED_Pin, HIGH);
           trigger_solenoid(k);
@@ -63,10 +86,11 @@ void loop(){
       }
 
       // output to serial monitor
-      Serial.print(bufferResult[0]);
-      Serial.print(",");
-      Serial.println(bufferResult[1]);
-
+      if (DEBUG) { 
+        Serial.print(bufferResult[0]);
+        Serial.print(",");
+        Serial.println(bufferResult[1]);
+      }
     }     
 }
 
@@ -85,8 +109,8 @@ void piezo_moving_average(int channel, float measurement) {
   //TODO: Improve smoothing function - add an upper bound, 
   //reset the function if the buffer result drops below a certain lower bound
   
-  state[channel]++;
-  if (state[channel]>=SAMPLE_SIZE) { state[channel]=0; }
+  iter[channel]++;
+  if (iter[channel]>=SAMPLE_SIZE) { iter[channel]=0; }
 
 }
 
