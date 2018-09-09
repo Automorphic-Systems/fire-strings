@@ -1,13 +1,17 @@
 #include <SimpleTimer.h>
 
 #define SAMPLE_SIZE 50
+
 #define DELAY 10
-  #define THRESHOLD 1.0
-#define MAX_BOUND 10000
+#define THRESHOLD 1.0
 #define SOL_DURATION 400
 #define SOL_REFRACTORY 1500
-#define CHANNELS 2
 #define DEBUG true
+#define PATTERN_MODE false
+#define SENSITIVITY 25.0
+
+#define MAX_BOUND 10000
+#define CHANNELS 2
 
 int LED_Pin = 13;
 int VIBR_PIN[CHANNELS] = { A0, A1 };
@@ -18,6 +22,9 @@ float bufferResult[CHANNELS];
 int state[CHANNELS] = { 0, 0 };
 int iter[CHANNELS] = { 0, 0 };
 bool readAnalogVibration = true;
+bool timerActive = false;
+SimpleTimer solenoidTimer;
+int timerId;
 
 void setup(){
   pinMode(LED_Pin, OUTPUT);
@@ -25,8 +32,12 @@ void setup(){
   pinMode(SOL_PIN[1], OUTPUT);
   Serial.begin(9600); //init serial 9600
 
-  reset_buffer(0);
-  reset_buffer(1);
+  // clear buffers
+  for (int i=0; i<CHANNELS; i++) {
+    reset_buffer(i);
+  }
+
+  timerId = solenoidTimer.setInterval(1000, trigger_solenoids);
 }
 
 void reset_buffer(int channel) {
@@ -37,49 +48,44 @@ void reset_buffer(int channel) {
   bufferResult[channel] = 0;
 }
 
-void trigger_solenoid(int channel) {
-    digitalWrite(SOL_PIN[channel], HIGH);
-    Serial.println("Actuation.....");
-    delay(SOL_DURATION);    
-    digitalWrite(SOL_PIN[channel], LOW);    
-    Serial.println("Refractory.....");
-    delay(SOL_REFRACTORY); 
-}
-
 void trigger_solenoids() {
+    int solCount = 0;
+
     for(int i=0; i<CHANNELS; i++) {
-      if (state[i]) {
+      if (state[i]==1) {
+//        Serial.println("Solenoid triggered..");
+//        Serial.println(i);
         digitalWrite(SOL_PIN[i], HIGH); 
-        reset_buffer(i);            
+        solCount++;
       }
     }
     
-    Serial.println("Actuation.....");
-    delay(SOL_DURATION);    
+   // Serial.println("Actuation.....");
+    if (solCount > 0) { delay(SOL_DURATION); }
 
     for(int i=0; i<CHANNELS; i++) {
       digitalWrite(SOL_PIN[i], LOW);        
+      reset_buffer(i); 
+      state[i]=0;           
     }
-    Serial.println("Refractory.....");
-    delay(SOL_REFRACTORY); 
+
+   // Serial.println("Refractory.....");
+    if (solCount > 0) { delay(SOL_REFRACTORY); } 
 }
 
 void loop(){  
     if (readAnalogVibration) {
-      
+      //TODO: make the timer invoke a callback function starting from when the first sensor passes threshold value
+      solenoidTimer.run();
+            
       for (int k=0; k<CHANNELS; k++) {
         int piezoVal = analogRead(VIBR_PIN[k]);
-
+  
         //TODO: modify moving average function
-        piezo_moving_average(k, piezoVal / 1023.0 * 25.0);
+        piezo_moving_average(k, piezoVal / 1023.0 * SENSITIVITY);
 
-        //TODO: if a channel crosses a threshold, set state to 1
-        //if timer is active and > 1 sec, stop timer and trigger solenoids
-        //if timer is inactive, start timer
         if (bufferResult[k] > THRESHOLD){
-          digitalWrite(LED_Pin, HIGH);
-          trigger_solenoid(k);
-          reset_buffer(k);
+          state[k] = 1;
         } else {
           digitalWrite(LED_Pin, LOW);
         }
@@ -97,7 +103,7 @@ void loop(){
 
 // implement circular buffer for moving average
 void piezo_moving_average(int channel, float measurement) {
-  int curPos = state[channel];                
+  int curPos = iter[channel];                
   float newVal = measurement / (float)SAMPLE_SIZE;  
   float oldVal = measurements[channel][curPos];
   
