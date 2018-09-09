@@ -2,39 +2,35 @@
 
 #define SAMPLE_SIZE 50
 
-#define DELAY 10
 #define THRESHOLD 1.0
 #define SOL_DURATION 400
 #define SOL_REFRACTORY 1500
 #define DEBUG true
 #define PATTERN_MODE false
-#define SENSITIVITY 25.0
+#define SENSITIVITY 100.0
+#define CHANNELS 4
 
-#define MAX_BOUND 10000
-#define CHANNELS 2
-
-int LED_Pin = 13;
-int VIBR_PIN[CHANNELS] = { A0, A1 };
-int SOL_PIN[CHANNELS] = { 10, 11 };
+int LED_PIN = 13;
+int VIBR_PIN[CHANNELS] = { A0, A1, A2, A3 };
+int SOL_PIN[CHANNELS] = { 10, 11, 8, 9 };
 
 float measurements[CHANNELS][SAMPLE_SIZE];
 float bufferResult[CHANNELS];
-int state[CHANNELS] = { 0, 0 };
-int iter[CHANNELS] = { 0, 0 };
+int state[CHANNELS] = { 0, 0, 0, 0 };
+int iter[CHANNELS] = { 0, 0, 0, 0 };
 bool readAnalogVibration = true;
 bool timerActive = false;
 SimpleTimer solenoidTimer;
 int timerId;
 
 void setup(){
-  pinMode(LED_Pin, OUTPUT);
-  pinMode(SOL_PIN[0], OUTPUT);
-  pinMode(SOL_PIN[1], OUTPUT);
+  pinMode(LED_PIN, OUTPUT);
   Serial.begin(9600); //init serial 9600
 
-  // clear buffers
+  // clear buffers and set pinmode
   for (int i=0; i<CHANNELS; i++) {
     reset_buffer(i);
+    pinMode(SOL_PIN[i], OUTPUT);
   }
 
   timerId = solenoidTimer.setInterval(1000, trigger_solenoids);
@@ -87,15 +83,19 @@ void loop(){
         if (bufferResult[k] > THRESHOLD){
           state[k] = 1;
         } else {
-          digitalWrite(LED_Pin, LOW);
+          digitalWrite(LED_PIN, LOW);
         }
       }
 
       // output to serial monitor
-      if (DEBUG) { 
+      if (DEBUG) {         
         Serial.print(bufferResult[0]);
         Serial.print(",");
-        Serial.println(bufferResult[1]);
+        Serial.print(bufferResult[1]);
+        Serial.print(",");
+        Serial.print(bufferResult[2]);
+        Serial.print(",");
+        Serial.println(bufferResult[3]);
       }
     }     
 }
