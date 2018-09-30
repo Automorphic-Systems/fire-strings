@@ -2,10 +2,10 @@
 
 #define SAMPLE_SIZE 50
 #define THRESHOLD 1.0
+#define MAX_VALUE 3.0
 #define CHANNELS 4
 
 #define REFRACT_COEFFICIENT 4.0
-#define DEBUG true
 #define PATTERN_MODE false
 #define AUTO_MODE false
 
@@ -14,8 +14,8 @@ int VIBR_PIN[CHANNELS] = { A0, A1, A2, A3 };
 int SOL_PIN[CHANNELS] = { 10, 11, 8, 9 };
 int CTRL_SENSITIVITY = A6;
 int CTRL_DURATION = A7;
-int PATTERN_PIN = 7;
-int AUTO_PIN = 6;
+int PATTERN_PIN = 7; // switch
+int AUTO_PIN = 6; // button
 int LED_PIN = 13;
 
 float SENSITIVITY_MAX = 250.0;
@@ -33,8 +33,8 @@ SimpleTimer solenoidTimer;
 int timerId;
 int senseVal;
 int durationVal;
-bool debugBtns = false;
-bool debugSensors = true;
+bool debugBtns = true;
+bool debugSensors = false;
 
 void setup(){
   pinMode(LED_PIN, OUTPUT);
@@ -105,14 +105,6 @@ void loop(){
     durationVal = DURATION_MIN + ((DURATION_MAX - DURATION_MIN) * analogRead(CTRL_DURATION)) / 1023;
 
     if (debugBtns) {
-      Serial.print(digitalRead(2)); // Valve 1
-      Serial.print(",");
-      Serial.print(digitalRead(3)); // Valve 2
-      Serial.print(",");
-      Serial.print(digitalRead(4)); // Valve 3
-      Serial.print(",");
-      Serial.print(digitalRead(5)); // Valve 4
-      Serial.print(",");
       Serial.print(isAuto); 
       Serial.print(",");
       Serial.print(isPattern);
@@ -122,36 +114,81 @@ void loop(){
       Serial.println(senseVal);
     }
 
-    
-    if (readAnalogVibration) {
-      //TODO: make the timer invoke a callback function starting 
-      //from when the first sensor passes threshold value
-      solenoidTimer.run();
-            
-      for (int k=0; k<CHANNELS; k++) {
-        int piezoVal = analogRead(VIBR_PIN[k]);
-  
-        //TODO: modify moving average function
-        piezo_moving_average(k, piezoVal / 1023.0 * senseVal);
-
-        if (bufferResult[k] > THRESHOLD){
-          state[k] = 1;
-        } else {
-          digitalWrite(LED_PIN, LOW);
+    // if manual, read input from buttons
+    if (!isAuto) {
+      
+        if (debugBtns) {
+          Serial.print(digitalRead(2)); // Valve 1
+          Serial.print(",");
+          Serial.print(digitalRead(3)); // Valve 2
+          Serial.print(",");
+          Serial.print(digitalRead(4)); // Valve 3
+          Serial.print(",");
+          Serial.println(digitalRead(5)); // Valve 4
         }
-      }
+      
+        state[0] = 1 - digitalRead(2);
+        state[1] = 1 - digitalRead(3);
+        state[2] = 1 - digitalRead(4);
+        state[3] = 1 - digitalRead(5);
+      
+        trigger_solenoids();
+        return;
+    }
+    
+    if (isAuto) {
+      // just kidding, not a pattern, just random shit
+      if (isPattern) {
+          // use sensitivity threshold seed random gen
+          randomSeed(analogRead(CTRL_SENSITIVITY));
+          state[0] = random(2);
+          state[1] = random(2);
+          state[2] = random(2);
+          state[3] = random(2);
+        
+          Serial.print(state[0]);
+          Serial.print(",");
+          Serial.print(state[1]);
+          Serial.print(",");
+          Serial.print(state[2]);
+          Serial.print(",");
+          Serial.println(state[3]); 
+          
+          trigger_solenoids();
+          int sleepVal = random(5000,20000);
+          Serial.println(sleepVal);
+          delay(sleepVal);
+          return;
+      } else {   
+          //TODO: make the timer invoke a callback function starting 
+          //from when the first sensor passes threshold value
+          solenoidTimer.run();
+       
+          for (int k=0; k<CHANNELS; k++) {
+            int piezoVal = analogRead(VIBR_PIN[k]);
+  
+            //TODO: modify moving average function
+            piezo_moving_average(k, piezoVal / 1023.0 * senseVal);
 
-      // output to serial monitor
-      if (debugSensors ) {         
-        Serial.print(bufferResult[0]);
-        Serial.print(",");
-        Serial.print(bufferResult[1]);
-        Serial.print(",");
-        Serial.print(bufferResult[2]);
-        Serial.print(",");
-        Serial.println(bufferResult[3]);
-      }
-    }     
+            if (bufferResult[k] > THRESHOLD){
+              state[k] = 1;
+            } else {
+              digitalWrite(LED_PIN, LOW);
+            }
+          }
+
+          // output to serial monitor
+          if (debugSensors) {         
+            Serial.print(bufferResult[0]);
+            Serial.print(",");
+            Serial.print(bufferResult[1]);
+            Serial.print(",");
+            Serial.print(bufferResult[2]);
+            Serial.print(",");
+            Serial.println(bufferResult[3]);
+          }
+        }
+      }     
 }
 
 
@@ -160,14 +197,13 @@ void piezo_moving_average(int channel, float measurement) {
   int curPos = iter[channel];                
   float newVal = measurement / (float)SAMPLE_SIZE;  
   float oldVal = measurements[channel][curPos];
-  
+  float newSum = bufferResult[channel] + newVal - oldVal;
   //Serial.println(i);
   //Serial.println(oldVal);
-  bufferResult[channel] = bufferResult[channel] + newVal - oldVal; 
+  // push in new result, discard old result
+  bufferResult[channel] = (newSum > MAX_VALUE) ? MAX_VALUE : bufferResult[channel] + newVal - oldVal;  
+  Serial.println(bufferResult[channel]);
   measurements[channel][curPos] = newVal;
-  
-  //TODO: Improve smoothing function - add an upper bound, 
-  //reset the function if the buffer result drops below a certain lower bound
   
   iter[channel]++;
   if (iter[channel]>=SAMPLE_SIZE) { iter[channel]=0; }
