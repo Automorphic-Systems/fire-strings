@@ -22,17 +22,23 @@ float SENSITIVITY_MAX = 250.0;
 float DURATION_MAX = 500.0;
 float DURATION_MIN = 50.0;
 
-// Real-time data structures
+// state
 float measurements[CHANNELS][SAMPLE_SIZE];
 float bufferResult[CHANNELS];
 int state[CHANNELS] = { 0, 0, 0, 0 };
 int iter[CHANNELS] = { 0, 0, 0, 0 };
 bool readAnalogVibration = true;
 bool timerActive = false;
-SimpleTimer solenoidTimer;
-int timerId;
 int senseVal;
 int durationVal;
+
+// timers
+SimpleTimer solenoidTimer;
+SimpleTimer solenoidSerTimer;
+int timerId;
+int timerSerId;
+
+// debugging
 bool debugBtns = true;
 bool debugSensors = false;
 
@@ -53,8 +59,13 @@ void setup(){
     pinMode(i, INPUT);  
     digitalWrite(i, HIGH);
   }
-  
+
+  // set timers
   timerId = solenoidTimer.setInterval(1000, trigger_solenoids);
+  timerSerId = solenoidSerTimer.setInterval(250, trigger_solenoids_serial);
+
+  // set random seed from some pin input
+  randomSeed(analogRead(CTRL_SENSITIVITY));
 }
 
 // clears the buffer of sensor data
@@ -72,8 +83,6 @@ void trigger_solenoids() {
 
     for(int i=0; i<CHANNELS; i++) {
       if (state[i]==1) {
-        //Serial.println("Solenoid triggered..");
-        //Serial.println(i);
         digitalWrite(SOL_PIN[i], HIGH); 
         solCount++;
       }
@@ -91,6 +100,29 @@ void trigger_solenoids() {
       state[i]=0;           
     }
  
+    if (solCount > 0) {
+      Serial.println("Refractory.....");
+      delay(durationVal * REFRACT_COEFFICIENT); 
+    }     
+}
+
+// actuates all of the solenoids whose state is set to 1 but in sequence
+// refractory period exists to restrict gas flow and limit re-actuation
+void trigger_solenoids_serial() {
+    int solCount = 0;
+    
+    Serial.println("Serial actuation....."); 
+    for(int i=0; i<CHANNELS; i++) {
+      if (state[i]==1) { 
+        digitalWrite(SOL_PIN[i], HIGH); 
+        delay(durationVal);  
+        digitalWrite(SOL_PIN[i], LOW);         
+        reset_buffer(i); 
+        state[i]=0;   
+        solCount++;
+      }
+    }      
+    
     if (solCount > 0) {
       Serial.println("Refractory.....");
       delay(durationVal * REFRACT_COEFFICIENT); 
@@ -116,7 +148,8 @@ void loop(){
 
     // if manual, read input from buttons
     if (!isAuto) {
-      
+        solenoidSerTimer.run();
+          
         if (debugBtns) {
           Serial.print(digitalRead(2)); // Valve 1
           Serial.print(",");
@@ -131,16 +164,14 @@ void loop(){
         state[1] = 1 - digitalRead(3);
         state[2] = 1 - digitalRead(4);
         state[3] = 1 - digitalRead(5);
-      
-        trigger_solenoids();
+    
         return;
     }
     
     if (isAuto) {
       // just kidding, not a pattern, just random shit
       if (isPattern) {
-          // use sensitivity threshold seed random gen
-          randomSeed(analogRead(CTRL_SENSITIVITY));
+          
           state[0] = random(2);
           state[1] = random(2);
           state[2] = random(2);
@@ -154,20 +185,17 @@ void loop(){
           Serial.print(",");
           Serial.println(state[3]); 
           
-          trigger_solenoids();
-          int sleepVal = random(5000,20000);
-          Serial.println(sleepVal);
-          delay(sleepVal);
-          return;
+          trigger_solenoids_serial();
+          //int sleepVal = random(1000,10000);
+          //Serial.println(sleepVal);
+          delay(random(1000,10000));
       } else {   
-          //TODO: make the timer invoke a callback function starting 
-          //from when the first sensor passes threshold value
+          //TODO: Implement callback/event function
           solenoidTimer.run();
-       
+          
           for (int k=0; k<CHANNELS; k++) {
             int piezoVal = analogRead(VIBR_PIN[k]);
   
-            //TODO: modify moving average function
             piezo_moving_average(k, piezoVal / 1023.0 * senseVal);
 
             if (bufferResult[k] > THRESHOLD){
@@ -202,7 +230,7 @@ void piezo_moving_average(int channel, float measurement) {
   //Serial.println(oldVal);
   // push in new result, discard old result
   bufferResult[channel] = (newSum > MAX_VALUE) ? MAX_VALUE : bufferResult[channel] + newVal - oldVal;  
-  Serial.println(bufferResult[channel]);
+  //Serial.println(bufferResult[channel]);
   measurements[channel][curPos] = newVal;
   
   iter[channel]++;
