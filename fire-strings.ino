@@ -39,8 +39,8 @@ int timerId;
 int timerSerId;
 
 // debugging
-bool debugBtns = true;
-bool debugSensors = false;
+bool debugBtns = false;
+bool debugSensors = true;
 
 void setup(){
   pinMode(LED_PIN, OUTPUT);
